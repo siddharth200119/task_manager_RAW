@@ -1,0 +1,13 @@
+fastapi
+pydantic
+requests
+sqlite3  
+groq
+ollama
+openai
+google-generativeai
+schedule
+threading
+time
+
+

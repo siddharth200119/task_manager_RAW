@@ -1,0 +1,37 @@
+
+services:
+  comms:
+    build:
+      context: ./comms  
+      dockerfile: Dockerfile 
+    ports:
+      - "3000:3000"  
+    container_name: comms_service
+    restart: unless-stopped  
+
+  productivity_tracker:
+    build:
+      context: ./productivity_tracker  
+      dockerfile: Dockerfile 
+    container_name: productivity_tracker_service
+    restart: unless-stopped
+    ports:
+      - "7991:7991" 
+    volumes:
+      - ./productivity_tracker:/app  
+    environment:
+      - PYTHONUNBUFFERED=1  
+      - COMMS_URL=http://comms:3000
+      - ollama="http://localhost:11434"
+      - GROQ_API_KEY="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"
+    env_file:
+      - ./productivity_tracker/.env
+    depends_on:
+      - comms                      
+    networks:
+      - app_network
+
+
+networks:
+  app_network:
+    driver: bridge 
