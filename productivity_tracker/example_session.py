@@ -19,6 +19,25 @@ Thought: I should tell the user
 
 Answer: There are 5 tasks
 
+Question: Mujhse task updates le lo
+
+Thought: The user has asked me to ask for task updates
+
+Follow Up: hello, do you have any updates?
+
+Observation: yes, i worked 2 hours on 'design footer' today
+
+Thought: I should  log this in time_logs table
+
+Action: excute_query:"INSERT INTO time_logs (user_id, task_id, start_time, notes) VALUES ((SELECT id FROM users WHERE name = '{uname}'), NULL, '{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}', 'Scheduled reminder for updates')"
+PAUSE
+
+Observation: time log entry add in time_logs table
+
+Thought: I should inform the user
+
+Answer: i have added the time log
+
 Question: i want to show princy's tasks
 
 Thought: the user {uname} wants to see princy's tasks
