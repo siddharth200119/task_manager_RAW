@@ -29,7 +29,7 @@ Observation: yes, i worked 2 hours on 'design footer' today
 
 Thought: I should  log this in time_logs table
 
-Action: excute_query:"INSERT INTO time_logs (user_id, task_id, start_time, notes) VALUES ((SELECT id FROM users WHERE name = '{uname}'), NULL, '{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}', 'Scheduled reminder for updates')"
+Action: excute_query: "INSERT INTO time_logs (user_id, task_id, start_time, notes) VALUES ((SELECT id FROM users WHERE name = '{uname}'))"
 PAUSE
 
 Observation: time log entry add in time_logs table
