@@ -16,6 +16,7 @@ def setup_database():
     ''')
     cursor.execute('''
         INSERT OR IGNORE INTO users (name, role) VALUES
+        ('Poojan','Super Admin'),
         ('Siddharth', 'Team Lead'),
         ('Keval', 'Team Lead'),
         ('Princy', 'Team Lead'),
@@ -205,6 +206,7 @@ def execute_query(query: str):
         return {"results": results}
     except Exception as e:
         raise Exception(f"Error executing query: {str(e)}")
+    
 if __name__ == "__main__":
     setup_database()
     print("Database created successfully!")

@@ -25,8 +25,8 @@ load_dotenv()
 
 app = FastAPI()
 
-# main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
-main_llm = OllamaLLM(host="http://192.168.1.19:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
+main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
+# main_llm = OllamaLLM(host="http://192.168.1.19:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
 
 class MessageRequest(BaseModel):
     sender: str
@@ -152,15 +152,31 @@ async def root():
     
     except Exception as e:
         return HTMLResponse(content=f"<h1>Error: {str(e)}</h1>")
-
-
+def log_time_entry(user_id,task_id,notes,assistant_message=None):
+    try:
+        conn = sqlite3.connect('example.db')
+        cursor = conn.cursor()
+        
+        start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        query = """
+        INSERT INTO time_logs (user_id, task_id, start_time, notes)
+        VALUES (?, ?, ?, ?)
+        """
+        cursor.execute(query, (user_id, task_id, start_time, notes))
+        conn.commit()
+        conn.close()
+        print(f"Logged time entry for user {user_id} with notes: {notes}")
+    except Exception as e:
+        print(f"Error logging time entry: {str(e)}")
+    
+white_list_copy = white_list
 @app.post("/chat")
 async def chat(request: MessageRequest):
     print(request.sender)
-    if(request.sender in white_list):
+    if(request.sender in white_list_copy):
         try:
-            if(type(white_list[request.sender]) is not Agent):
-                white_list[request.sender] = Agent(
+            if(type(white_list_copy[request.sender]) is not Agent):
+                white_list_copy[request.sender] = Agent(
                     name="HEXY",
                     role=f"Help employees track their productivity and assist as a general assistant. Right now you are talking to {white_list[request.sender]}",
                     llm=main_llm,
@@ -168,14 +184,14 @@ async def chat(request: MessageRequest):
                     textColor=TextColor.GREEN,
                     backgroundColor=BackgroundColor.BLACK,
                     personality="helpful",
-                    exampleSession=make_example_session(white_list[request.sender]),
+                    exampleSession=make_example_session(white_list_copy[request.sender]),
                     allow_follow_up=True
                 )
                 
-                print(white_list[request.sender].system_prompt)
+                print(white_list_copy[request.sender].system_prompt)
 
             response = ""
-            async for item in white_list[request.sender](request.message):
+            async for item in white_list_copy[request.sender](request.message):
                 response = item
             try:
                 requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": request.sender, "text": response})
@@ -185,7 +201,6 @@ async def chat(request: MessageRequest):
             raise HTTPException(status_code=500, detail="Error processing the request")
     else:
         raise HTTPException(status_code=400, detail="invalid employee")
-
 import subprocess
 
 START_TIME = "09:30"
@@ -198,7 +213,7 @@ def is_within_schedule():
 
 def is_sunday():
     """Check if today is Sunday."""
-    return datetime.now().weekday() == 6  # 6 represents Sunday
+    return datetime.now().weekday() == 6
 
 def scheduled_task():
     """Task that runs only within the defined time range and not on Sundays."""
@@ -208,9 +223,20 @@ def scheduled_task():
     if is_within_schedule():
         for number in white_list:
             try:
-                requests.post("http://127.0.0.1:3000/send-message", json={"to": number, "text": f"Hey {white_list[number]}, do you have any updates?"})
-            except:
-                print(f"cannot send message to {white_list[number]}")
+                reminder_message = f"Hey {white_list[number]}, do you have any updates?"
+                requests.post("http://127.0.0.1:3001/send-message", json={"to": number, "text": reminder_message})
+                # user_id = number  
+                # task_id = None    
+                # log_time_entry(user_id, task_id, reminder_message)
+                if(type(white_list_copy[number]) is Agent):
+                    if(white_list_copy[number].messages[-1]["role"] == "user"):
+                        white_list_copy[number].messages.append({"role": "assistant", "content": reminder_message})
+                    else:
+                        white_list_copy[number].messages.append({"role": "user", "content": "Ask me task updates"})
+                        white_list_copy[number].messages.append({"role": "assistant", "content": reminder_message})
+                
+            except Exception as e:
+                print(f"Cannot send message or log entry for {white_list[number]}: {str(e)}")
         return
     else:
         return
@@ -220,12 +246,12 @@ def evening_task():
     if is_sunday():
         return
     try:
-        requests.post("http://127.0.0.1:3000/send-message", json={"to": "916354879720@c.us", "text": f"Here are the task updates: http://localhost:7992"})
+        requests.post("http://127.0.0.1:3001/send-message", json={"to": "916354879720@c.us", "text": f"Here are the task updates: http://localhost:7992"})
     except:
         print("cannot send message to the user")
 
 # Schedule the tasks
-schedule.every(3).hours.do(scheduled_task)
+schedule.every(1).hours.do(scheduled_task)
 schedule.every().day.at("11:30").do(evening_task)  # Run daily at 7 PM
 
 def run_scheduler():
