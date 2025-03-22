@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import subprocess
@@ -19,6 +19,7 @@ import sqlite3
 import schedule
 import time
 import threading
+import asyncio
 from datetime import datetime
 
 load_dotenv()
@@ -26,7 +27,7 @@ load_dotenv()
 app = FastAPI()
 
 # main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
-main_llm = OllamaLLM(host="http://192.168.1.19:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
+main_llm = OllamaLLM(host="http://localhost:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
 
 class MessageRequest(BaseModel):
     sender: str
@@ -152,39 +153,52 @@ async def root():
     
     except Exception as e:
         return HTMLResponse(content=f"<h1>Error: {str(e)}</h1>")
+    
+
+async def process_agent_response(sender: str, message: str):
+    """Background task to process agent response and send it asynchronously."""
+    if sender not in white_list:
+        return
+    
+    # Initialize the agent if not already done
+    if not isinstance(white_list[sender], Agent):
+        white_list[sender] = Agent(
+            name="HEXY",
+            role=f"Help employees track their productivity and assist as a general assistant. Right now you are talking to {white_list[sender]}",
+            llm=main_llm,
+            tools=[task_add_tool, assign_task_tool, update_task_tool, get_task_tool, get_schema_tool, execute_query_tool, datetime_tool],
+            textColor=TextColor.GREEN,
+            backgroundColor=BackgroundColor.BLACK,
+            personality="helpful",
+            exampleSession=make_example_session(white_list[sender]),
+            allow_follow_up=True
+        )
+
+    # Process the agent response
+    response = ""
+    async for item in white_list[sender](message):
+        response = item
+
+    # Send the response to the communication URL
+    try:
+        requests.post(
+            f"{os.environ.get('COMMS_URL')}/send-message",
+            json={"to": sender, "text": response}
+        )
+    except Exception as e:
+        print(f"Failed to send message to {sender}: {str(e)}")
 
 
 @app.post("/chat")
-async def chat(request: MessageRequest):
-    print(request.sender)
-    if(request.sender in white_list):
-        try:
-            if(type(white_list[request.sender]) is not Agent):
-                white_list[request.sender] = Agent(
-                    name="HEXY",
-                    role=f"Help employees track their productivity and assist as a general assistant. Right now you are talking to {white_list[request.sender]}",
-                    llm=main_llm,
-                    tools=[task_add_tool,assign_task_tool,update_task_tool,get_task_tool, get_schema_tool, execute_query_tool,datetime_tool],
-                    textColor=TextColor.GREEN,
-                    backgroundColor=BackgroundColor.BLACK,
-                    personality="helpful",
-                    exampleSession=make_example_session(white_list[request.sender]),
-                    allow_follow_up=True
-                )
-                
-                print(white_list[request.sender].system_prompt)
-
-            response = ""
-            async for item in white_list[request.sender](request.message):
-                response = item
-            try:
-                requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": request.sender, "text": response})
-            except:
-                return {"answer": f"{response}"}
-        except StopAsyncIteration:
-            raise HTTPException(status_code=500, detail="Error processing the request")
-    else:
+async def chat(request: MessageRequest, background_tasks: BackgroundTasks):
+    if request.sender not in white_list:
         raise HTTPException(status_code=400, detail="invalid employee")
+
+    # Add the agent processing to background tasks
+    background_tasks.add_task(process_agent_response, request.sender, request.message)
+
+    # Return immediately without waiting for the agent to complete
+    return {"status": "Message received, processing in the background"}
 
 import subprocess
 
@@ -208,7 +222,7 @@ def scheduled_task():
     if is_within_schedule():
         for number in white_list:
             try:
-                requests.post("http://127.0.0.1:3000/send-message", json={"to": number, "text": f"Hey {white_list[number]}, do you have any updates?"})
+                requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": number, "text": f"Hey {white_list[number]}, do you have any updates?"})
             except:
                 print(f"cannot send message to {white_list[number]}")
         return
@@ -220,13 +234,13 @@ def evening_task():
     if is_sunday():
         return
     try:
-        requests.post("http://127.0.0.1:3000/send-message", json={"to": "916354879720@c.us", "text": f"Here are the task updates: http://localhost:7992"})
+        requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": "916354879720@c.us", "text": f"Here are the task updates: http://localhost:7991"})
     except:
         print("cannot send message to the user")
 
 # Schedule the tasks
 schedule.every(3).hours.do(scheduled_task)
-schedule.every().day.at("11:30").do(evening_task)  # Run daily at 7 PM
+schedule.every().day.at("19:00").do(evening_task)  # Run daily at 7 PM
 
 def run_scheduler():
     while True:
