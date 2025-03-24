@@ -1,20 +1,17 @@
-from flask import Flask, request, jsonify
+from fastapi import HTTPException
 import sqlite3
-
-app = Flask(__name__)
 
 def get_db_connection():
     conn = sqlite3.connect('example.db')
     conn.row_factory = sqlite3.Row
     return conn
 
-@app.route('/api/users', methods=['GET'])
-def get_users():
+def get_users(
+    user_id: int = None,
+    name: str = None,
+    role: str = None
+):
     try:
-        user_id = request.args.get('id')
-        name = request.args.get('name')
-        role = request.args.get('role')
-
         query = "SELECT id, name, role FROM users WHERE 1=1"
         params = []
 
@@ -36,17 +33,10 @@ def get_users():
         
         conn.close()
 
-        return jsonify({
+        return {
             'status': 'success',
             'users': users,
             'count': len(users)
-        }), 200
-
+        }
     except sqlite3.Error as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Database error: {str(e)}'
-        }), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+        raise HTTPException(status_code=500, detail=f'Database error: {str(e)}')

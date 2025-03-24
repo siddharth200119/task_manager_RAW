@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks,Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import subprocess
@@ -22,10 +22,26 @@ import time
 import threading
 import asyncio
 from datetime import datetime, timedelta
+from task_api import get_tasks
+from user_api import get_users
+from time_logs_api import get_time_logs
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 app = FastAPI()
+
+origins = [
+  "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 white_list_copy = json.loads(json.dumps(white_list))
 
@@ -89,6 +105,37 @@ html_content = """<!DOCTYPE html>
     </div>
 </body>
 </html>"""
+
+@app.get("/tasks")
+async def fetch_tasks(
+   task_id: int = None, 
+    title: str = None,
+    status: str = None,
+    priority: int = None
+):
+    result = get_tasks(task_id, title, status, priority)
+    return result
+
+@app.get("/users")
+async def fetch_users(
+    user_id: int = None,
+    name: str = None,
+    role: str = None
+):
+    result = get_users(user_id, name, role)
+    return result
+
+@app.get("/time_logs")
+async def fetch_time_logs(
+    id: int = None,
+    task_id: int = None,
+    user_id: int = None,
+    start_time: str = None,
+    end_time: str = None
+):
+    result = get_time_logs(id, task_id, user_id, start_time, end_time)
+    return result
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
