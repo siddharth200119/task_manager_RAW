@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import subprocess
 from dotenv import load_dotenv
 import os
+import json
 from RAWW.RAW import Agent, GroqLLM,OllamaLLM, TextColor, BackgroundColor
 import requests
 from white_list import white_list
@@ -26,8 +27,10 @@ load_dotenv()
 
 app = FastAPI()
 
-# main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
-main_llm = OllamaLLM(host="http://localhost:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
+white_list_copy = json.loads(json.dumps(white_list))
+
+main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
+# main_llm = OllamaLLM(host="http://localhost:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
 
 class MessageRequest(BaseModel):
     sender: str
@@ -222,9 +225,9 @@ def scheduled_task():
     if is_within_schedule():
         for number in white_list:
             try:
-                requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": number, "text": f"Hey {white_list[number]}, do you have any updates?"})
+                requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": number, "text": f"Hey {white_list_copy[number]}, do you have any updates?"})
             except:
-                print(f"cannot send message to {white_list[number]}")
+                print(f"cannot send message to {white_list_copy[number]}")
         return
     else:
         return

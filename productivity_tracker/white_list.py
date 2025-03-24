@@ -1,8 +1,8 @@
 white_list = {
      "917990424910@c.us": "Siddharth",
-     "916353961593@c.us": "Keval",
+     # "916353961593@c.us": "Keval",
      "916354076116@c.us": "Princy",
-     "919313076530@c.us": "Gopi",
+     "919313076530@c.us": "Keval",
      "919075299614@c.us": "Dinkey",
      "918347934215@c.us": "Sneha",
      "919825269619@c.us": "Dhaval",
