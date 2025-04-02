@@ -40,9 +40,7 @@ def setup_database():
         ('Loukika','Team Member'),
         ('Aditi','Team Member'),
         ('Astha','Team Member'),
-        ('Hithyshee','Team Member')
-        
-        
+        ('Hithyshee','Team Member')        
     ''')
 
     # Projects table
