@@ -48,6 +48,8 @@ white_list_copy = json.loads(json.dumps(white_list))
 last_message_sent = {number: None for number in white_list} 
 last_reply_received = {number: None for number in white_list}  
 
+agent_history = {number: [] for number in white_list}
+
 main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
 # main_llm = OllamaLLM(host="http://localhost:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
 
@@ -256,6 +258,7 @@ def send_message(number, text):
             f"{os.environ.get('COMMS_URL')}/send-message",
             json={"to": number, "text": text}
         )
+        print(response)
         response.raise_for_status()
         last_message_sent[number] = datetime.now()  
     except Exception as e:
@@ -267,7 +270,13 @@ def scheduled_task_initial():
         return
     
     for number in white_list:
-        send_message(number, f"Hey {white_list_copy[number]}, do you have any updates?")
+        message = f"Hey {white_list_copy[number]}, do you have any updates?"
+        if agent_history[number] and agent_history[number][-1]['role']=='user':
+            agent_history[number].append({'role':'assistant','content':message})
+        else:
+            agent_history[number].append({'role':'user','content':'ask me for updates'})
+            agent_history[number].append({'role':'assistant','content':message})
+        send_message(number, message)
 
 def scheduled_task_followup():
     """Send follow-up message every 10 minutes to users who haven't replied."""
@@ -292,7 +301,7 @@ def evening_task():
 
 # Schedule the tasks
 schedule.every(3).hours.do(scheduled_task_initial)  
-schedule.every(10).minutes.do(scheduled_task_followup)  
+schedule.every(10).hours.do(scheduled_task_followup)  
 schedule.every().day.at("19:00").do(evening_task)  
 
 def run_scheduler():
@@ -315,6 +324,6 @@ def start_node_server():
     print("Node.js stderr:", stderr)
 
 if __name__ == "__main__":
-    start_node_server()
+    # start_node_server()
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7991)

@@ -34,7 +34,14 @@ def setup_database():
         ('Dhruvi','Team Member'),
         ('Parth AIML','Team Member'),
         ('Parth Cyber','Team Member'),
-        ('Honey','Team Member')
+        ('Honey','Team Member'),
+        ('Kaushal','Team Member'),
+        ('Khushbu','Team Member'),
+        ('Loukika','Team Member'),
+        ('Aditi','Team Member'),
+        ('Astha','Team Member'),
+        ('Hithyshee','Team Member')
+        
         
     ''')
 

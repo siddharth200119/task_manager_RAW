@@ -1,8 +1,8 @@
 white_list = {
      "917990424910@c.us": "Siddharth",
-     # "916353961593@c.us": "Keval",
+     "916353961593@c.us": "Keval",
      "916354076116@c.us": "Princy",
-     "919313076530@c.us": "Keval",
+     "919313076530@c.us": "Gopi",
      "919075299614@c.us": "Dinkey",
      "918347934215@c.us": "Sneha",
      "919825269619@c.us": "Dhaval",
@@ -17,6 +17,13 @@ white_list = {
      "918320262914@c.us": "Dhruvi",
      "918799493771@c.us": "Parth AIML",
      "919016067192@c.us": "Parth Cyber",
-     "918799552147@c.us": "Honey"
+     "918799552147@c.us": "Honey",
+     "919510157477@c.us": "Kaushal",
+     "919769242771@c.us": "Khushbu",
+     "918208816440@c.us": "Loukika",
+     "917975359636@c.us": "Aditi",
+     "916376128467@c.us": "Astha",
+     "918247739275@c.us": "Hithyshee",
+     
      
 }
