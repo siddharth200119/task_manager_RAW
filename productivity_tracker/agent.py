@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks,Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import subprocess
 from dotenv import load_dotenv
 import os
-from RAWW.RAW import Agent, GroqLLM,OllamaLLM, TextColor, BackgroundColor
+import json
+from RAWW.RAW import Agent, GroqLLM, OllamaLLM, TextColor, BackgroundColor
 import requests
 from white_list import white_list
 from example_session import make_example_session
@@ -20,14 +21,37 @@ import schedule
 import time
 import threading
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+from task_api import get_tasks
+from user_api import get_users
+from time_logs_api import get_time_logs
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 app = FastAPI()
 
-# main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
-main_llm = OllamaLLM(host="http://localhost:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
+origins = [
+  "http://localhost:3001",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+white_list_copy = json.loads(json.dumps(white_list))
+
+last_message_sent = {number: None for number in white_list} 
+last_reply_received = {number: None for number in white_list}  
+
+agent_history = {number: [] for number in white_list}
+
+main_llm = GroqLLM(api_key=os.environ.get("GROQ_API_KEY"))
+# main_llm = OllamaLLM(host="http://localhost:11434", model="llama3.1:70b", num_ctx=32768, temperature=0.5)
 
 class MessageRequest(BaseModel):
     sender: str
@@ -84,6 +108,37 @@ html_content = """<!DOCTYPE html>
 </body>
 </html>"""
 
+@app.get("/tasks")
+async def fetch_tasks(
+   task_id: int = None, 
+    title: str = None,
+    status: str = None,
+    priority: int = None
+):
+    result = get_tasks(task_id, title, status, priority)
+    return result
+
+@app.get("/users")
+async def fetch_users(
+    user_id: int = None,
+    name: str = None,
+    role: str = None
+):
+    result = get_users(user_id, name, role)
+    return result
+
+@app.get("/time_logs")
+async def fetch_time_logs(
+    id: int = None,
+    task_id: int = None,
+    user_id: int = None,
+    start_time: str = None,
+    end_time: str = None
+):
+    result = get_time_logs(id, task_id, user_id, start_time, end_time)
+    return result
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     try:
@@ -134,33 +189,23 @@ async def root():
         # Generate HTML table rows with all 25 columns
         table_rows = ""
         for row in data:
-            # Handle potential None values by replacing with 'N/A' or '0'
-            formatted_row = []
-            for value in row:
-                if value is None:
-                    formatted_row.append('N/A')
-                else:
-                    formatted_row.append(str(value))
-            
-            # Create table row with all columns
-            table_row = "<tr>"
-            for value in formatted_row:
-                table_row += f"<td>{value}</td>"
-            table_row += "</tr>"
+            formatted_row = [str(value) if value is not None else 'N/A' for value in row]
+            table_row = "<tr>" + "".join(f"<td>{value}</td>" for value in formatted_row) + "</tr>"
             table_rows += table_row
         
         return HTMLResponse(content=html_content.format(table_rows=table_rows))
     
     except Exception as e:
         return HTMLResponse(content=f"<h1>Error: {str(e)}</h1>")
-    
 
 async def process_agent_response(sender: str, message: str):
     """Background task to process agent response and send it asynchronously."""
     if sender not in white_list:
         return
     
-    # Initialize the agent if not already done
+    # Update last reply time when a user responds
+    last_reply_received[sender] = datetime.now()
+    
     if not isinstance(white_list[sender], Agent):
         white_list[sender] = Agent(
             name="HEXY",
@@ -174,12 +219,10 @@ async def process_agent_response(sender: str, message: str):
             allow_follow_up=True
         )
 
-    # Process the agent response
     response = ""
     async for item in white_list[sender](message):
         response = item
 
-    # Send the response to the communication URL
     try:
         requests.post(
             f"{os.environ.get('COMMS_URL')}/send-message",
@@ -188,19 +231,13 @@ async def process_agent_response(sender: str, message: str):
     except Exception as e:
         print(f"Failed to send message to {sender}: {str(e)}")
 
-
 @app.post("/chat")
 async def chat(request: MessageRequest, background_tasks: BackgroundTasks):
     if request.sender not in white_list:
         raise HTTPException(status_code=400, detail="invalid employee")
 
-    # Add the agent processing to background tasks
     background_tasks.add_task(process_agent_response, request.sender, request.message)
-
-    # Return immediately without waiting for the agent to complete
     return {"status": "Message received, processing in the background"}
-
-import subprocess
 
 START_TIME = "09:30"
 END_TIME = "19:00"
@@ -212,42 +249,66 @@ def is_within_schedule():
 
 def is_sunday():
     """Check if today is Sunday."""
-    return datetime.now().weekday() == 6  # 6 represents Sunday
+    return datetime.now().weekday() == 6
 
-def scheduled_task():
-    """Task that runs only within the defined time range and not on Sundays."""
-    if is_sunday():
+def send_message(number, text):
+    """Helper function to send a message and log errors."""
+    try:
+        response = requests.post(
+            f"{os.environ.get('COMMS_URL')}/send-message",
+            json={"to": number, "text": text}
+        )
+        print(response)
+        response.raise_for_status()
+        last_message_sent[number] = datetime.now()  
+    except Exception as e:
+        print(f"Cannot send message to {white_list_copy[number]}: {str(e)}")
+
+def scheduled_task_initial():
+    """Send initial message to all users every 3 hours."""
+    if is_sunday() or not is_within_schedule():
         return
     
-    if is_within_schedule():
-        for number in white_list:
-            try:
-                requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": number, "text": f"Hey {white_list[number]}, do you have any updates?"})
-            except:
-                print(f"cannot send message to {white_list[number]}")
+    for number in white_list:
+        message = f"Hey {white_list_copy[number]}, do you have any updates?"
+        if agent_history[number] and agent_history[number][-1]['role']=='user':
+            agent_history[number].append({'role':'assistant','content':message})
+        else:
+            agent_history[number].append({'role':'user','content':'ask me for updates'})
+            agent_history[number].append({'role':'assistant','content':message})
+        send_message(number, message)
+
+def scheduled_task_followup():
+    """Send follow-up message every 10 minutes to users who haven't replied."""
+    if is_sunday() or not is_within_schedule():
         return
-    else:
-        return
+    
+    current_time = datetime.now()
+    for number in white_list:
+        last_sent = last_message_sent[number]
+        last_reply = last_reply_received[number]
+        
+        if (last_sent and 
+            (last_reply is None or last_reply < last_sent) and 
+            (current_time - last_sent) >= timedelta(minutes=10)):
+            send_message(number, f"Hey {white_list_copy[number]}, I’m still waiting for your update!")
 
 def evening_task():
     """Task that runs at 7 PM every day except Sundays."""
     if is_sunday():
         return
-    try:
-        requests.post(f"{os.environ.get('COMMS_URL')}/send-message", json={"to": "916354879720@c.us", "text": f"Here are the task updates: http://localhost:7991"})
-    except:
-        print("cannot send message to the user")
+    send_message("916354879720@c.us", f"Here are the task updates: http://localhost:7991")
 
 # Schedule the tasks
-schedule.every(3).hours.do(scheduled_task)
-schedule.every().day.at("19:00").do(evening_task)  # Run daily at 7 PM
+schedule.every(3).hours.do(scheduled_task_initial)  
+schedule.every(10).hours.do(scheduled_task_followup)  
+schedule.every().day.at("19:00").do(evening_task)  
 
 def run_scheduler():
     while True:
         schedule.run_pending()
-        time.sleep(1)  # Sleep to avoid high CPU usage
+        time.sleep(1)
 
-# Start scheduler in a background thread
 scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
 scheduler_thread.start()
 
@@ -258,8 +319,11 @@ def start_node_server():
         stderr=subprocess.PIPE,
         text=True
     )
+    stdout, stderr = process.communicate()
+    print("Node.js stdout:", stdout)
+    print("Node.js stderr:", stderr)
 
 if __name__ == "__main__":
-    start_node_server()
+    # start_node_server()
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7991)
